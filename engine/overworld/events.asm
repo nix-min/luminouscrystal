@@ -555,7 +555,6 @@ TryObjectEvent:
 	ld a, [hl]
 	and %00001111
 
-; Bug: If IsInArray returns nc, data at bc will be executed as code.
 	push bc
 	ld de, 3
 	ld hl, .pointers
@@ -570,7 +569,7 @@ TryObjectEvent:
 	jp hl
 
 .nope_bugged
-	; pop bc
+	pop bc
 	xor a
 	ret
 

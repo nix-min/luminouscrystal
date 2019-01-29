@@ -1406,18 +1406,12 @@ BattleCheckTypeMatchup:
 	and a
 	jr z, CheckTypeMatchup
 	ld hl, wBattleMonType1
+	ld a, BATTLE_VARS_MOVE_TYPE
+	call GetBattleVar ; preserves hl, de, and bc
 CheckTypeMatchup:
-; There is an incorrect assumption about this function made in the AI related code: when
-; the AI calls CheckTypeMatchup (not BattleCheckTypeMatchup), it assumes that placing the
-; offensive type in a will make this function do the right thing. Since a is overwritten,
-; this assumption is incorrect. A simple fix would be to load the move type for the
-; current move into a in BattleCheckTypeMatchup, before falling through, which is
-; consistent with how the rest of the code assumes this code works like.
 	push hl
 	push de
 	push bc
-	ld a, BATTLE_VARS_MOVE_TYPE
-	call GetBattleVar
 	ld d, a
 	ld b, [hl]
 	inc hl
@@ -1877,17 +1871,18 @@ BattleCommand_EffectChance:
 	ld hl, wEnemyMoveStruct + MOVE_CHANCE
 .got_move_chance
 
-	; BUG: 1/256 chance to fail even for a 100% effect chance,
-	; since carry is not set if BattleRandom == [hl] == 255
+	ld a, [hl]
+	cp 100 percent
+	jr z, .ok
 	call BattleRandom
 	cp [hl]
-	pop hl
-	ret c
-
+	jr c, .ok
 .failed
 	ld a, 1
 	ld [wEffectFailed], a
 	and a
+.ok
+	pop hl
 	ret
 
 BattleCommand_LowerSub:
@@ -2113,6 +2108,8 @@ BattleCommand_FailureText:
 	cp EFFECT_DOUBLE_HIT
 	jr z, .multihit
 	cp EFFECT_POISON_MULTI_HIT
+	jr z, .multihit
+	cp EFFECT_BEAT_UP
 	jr z, .multihit
 	jp EndMoveEffect
 
@@ -2558,6 +2555,16 @@ DittoMetalPowder:
 .done
 	scf
 	rr c
+
+	ld a, HIGH(MAX_STAT_VALUE)
+	cp b
+	jr c, .cap
+	ld a, LOW(MAX_STAT_VALUE)
+	cp c
+	ret nc
+
+.cap
+	ld bc, MAX_STAT_VALUE
 	ret
 
 BattleCommand_DamageStats:
@@ -2682,9 +2689,6 @@ TruncateHL_BC:
 	inc l
 
 .finish
-	ld a, [wLinkMode]
-	cp LINK_COLOSSEUM
-	jr z, .done
 ; If we go back to the loop point,
 ; it's the same as doing this exact
 ; same check twice.
@@ -2692,7 +2696,6 @@ TruncateHL_BC:
 	or b
 	jr nz, .loop
 
-.done
 	ld b, l
 	ret
 
@@ -2810,6 +2813,16 @@ SpeciesItemBoost:
 ; Double the stat
 	sla l
 	rl h
+
+	ld a, HIGH(MAX_STAT_VALUE)
+	cp h
+	jr c, .cap
+	ld a, LOW(MAX_STAT_VALUE)
+	cp l
+	ret nc
+
+.cap
+	ld hl, MAX_STAT_VALUE
 	ret
 
 EnemyAttackDamage:
@@ -5347,8 +5360,7 @@ BattleCommand_EndLoop:
 	ld a, BATTLE_VARS_SUBSTATUS3
 	call GetBattleVarAddr
 	res SUBSTATUS_IN_LOOP, [hl]
-	call BattleCommand_BeatUpFailText
-	jp EndMoveEffect
+	ret
 
 .not_triple_kick
 	call BattleRandom
@@ -6672,10 +6684,7 @@ INCLUDE "engine/battle/move_effects/future_sight.asm"
 INCLUDE "engine/battle/move_effects/thunder.asm"
 
 CheckHiddenOpponent:
-; BUG: This routine is completely redundant and introduces a bug, since BattleCommand_CheckHit does these checks properly.
-	ld a, BATTLE_VARS_SUBSTATUS3_OPP
-	call GetBattleVar
-	and 1 << SUBSTATUS_FLYING | 1 << SUBSTATUS_UNDERGROUND
+	xor a
 	ret
 
 GetUserItem:
